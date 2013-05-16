@@ -10,14 +10,25 @@
 
 
 @interface CODialogTextField : UITextField
+#if (__IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_5_0)
 @property (nonatomic, strong) CODialog *dialog;
+@property (nonatomic, strong) id<CODialogFieldDelegate> CODialogFieldCB;
+#else
+@property (nonatomic, retain) CODialog *dialog;
+@property (nonatomic, assign) id<CODialogFieldDelegate> CODialogFieldCB;
+#endif
 @end
 
 @interface CODialogWindowOverlay : UIWindow
+#if (__IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_5_0)
 @property (nonatomic, strong) CODialog *dialog;
+#else
+@property (nonatomic, retain) CODialog *dialog;
+#endif
 @end
 
 @interface CODialog ()
+#if (__IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_5_0)
 @property (nonatomic, strong) CODialogWindowOverlay *overlay;
 @property (nonatomic, strong) UIWindow *hostWindow;
 @property (nonatomic, strong) UIView *contentView;
@@ -27,6 +38,17 @@
 @property (nonatomic, strong) UIFont *titleFont;
 @property (nonatomic, strong) UIFont *subtitleFont;
 @property (nonatomic, assign) NSInteger highlightedIndex;
+#else
+@property (nonatomic, retain) CODialogWindowOverlay *overlay;
+@property (nonatomic, retain) UIWindow *hostWindow;
+@property (nonatomic, retain) UIView *contentView;
+@property (nonatomic, retain) UIView *accessoryView;
+@property (nonatomic, retain) NSMutableArray *textFields;
+@property (nonatomic, retain) NSMutableArray *buttons;
+@property (nonatomic, retain) UIFont *titleFont;
+@property (nonatomic, retain) UIFont *subtitleFont;
+@property (nonatomic, assign) NSInteger highlightedIndex;
+#endif
 @end
 
 #define CODialogSynth(x) @synthesize x = x##_;
@@ -40,6 +62,7 @@
 #define kCODialogTextFieldHeight 29.0
 
 @implementation CODialog {
+#if (__IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_5_0)
 @private
   struct {
     CGRect titleRect;
@@ -48,7 +71,9 @@
     CGRect textFieldsRect;
     CGRect buttonRect;
   } layout;
+#endif /* Does not compile under Xcode 3.2.5 */
 }
+
 CODialogSynth(customView)
 CODialogSynth(dialogStyle)
 CODialogSynth(title)
@@ -64,9 +89,15 @@ CODialogSynth(titleFont)
 CODialogSynth(subtitleFont)
 CODialogSynth(highlightedIndex)
 
+#if (__IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_5_0)
 + (instancetype)dialogWithWindow:(UIWindow *)hostWindow {
   return [[self alloc] initWithWindow:hostWindow];
 }
+#else
++ (id)dialogWithWindow:(UIWindow *)hostWindow {
+  return [[self alloc] initWithWindow:hostWindow];
+}
+#endif
 
 - (id)initWithWindow:(UIWindow *)hostWindow {
   self = [super initWithFrame:[self defaultDialogFrame]];
@@ -91,6 +122,8 @@ CODialogSynth(highlightedIndex)
 
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+	//
+	//[super dealloc];
 }
 
 - (void)adjustToKeyboardBounds:(CGRect)bounds {
@@ -135,7 +168,10 @@ CODialogSynth(highlightedIndex)
   if ([view isKindOfClass:[UIProgressView class]]) {
     // Check for selector for iOS 4 compatibility
     if ([view respondsToSelector:@selector(setProgress:animated:)]) {
-      [view setProgress:progress animated:YES];
+		if ([view respondsToSelector:@selector(setProgress:animated:)])
+			[view setProgress:progress animated:YES];
+		else
+			[view setProgress:progress];  // iOS 4
     } else {
       [view setProgress:progress];
     }
@@ -318,7 +354,8 @@ CODialogSynth(highlightedIndex)
     [UIView transitionFromView:self.contentView
                         toView:newContentView
                       duration:animationDuration
-                       options:UIViewAnimationOptionTransitionCrossDissolve
+                       //options:UIViewAnimationOptionTransitionCrossDissolve
+	 options:UIViewAnimationOptionTransitionCurlDown
                     completion:^(BOOL finished) {
                       self.contentView = newContentView;
                     }];
@@ -366,24 +403,32 @@ CODialogSynth(highlightedIndex)
   self.highlightedIndex = -1;
 }
 
-- (void)addTextFieldWithPlaceholder:(NSString *)placeholder secure:(BOOL)secure {
-  for (UITextField *field in self.textFields) {
-    field.returnKeyType = UIReturnKeyNext;
-  }
-  
-  CODialogTextField *field = [[CODialogTextField alloc] initWithFrame:CGRectMake(0, 0, 200, kCODialogTextFieldHeight)];
-  field.dialog = self;
-  field.returnKeyType = UIReturnKeyDone;
-  field.placeholder = placeholder;
-  field.secureTextEntry = secure;
-  field.font = [UIFont systemFontOfSize:kCODialogTextFieldHeight - 8.0];
-  field.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
-  field.textColor = [UIColor blackColor];
-  field.keyboardAppearance = UIKeyboardAppearanceAlert;
-  field.delegate = (id)self;
-  
-  [self.textFields addObject:field];
+#pragma mark Custom TextField! - by t0mm13b
+- (void)addTextFieldWithPlaceholder:(NSString *)placeholder 
+						 secureFlag:(BOOL)isSecure 
+					autoCorrectFlag:(BOOL)isAutoCorrect 
+			 targetDelegateCallback:(id<CODialogFieldDelegate>)targetCallback {
+	for (UITextField *field in self.textFields) {
+		field.returnKeyType = UIReturnKeyNext;
+	}
+	
+	CODialogTextField *field = [[CODialogTextField alloc] initWithFrame:CGRectMake(0, 0, 200, kCODialogTextFieldHeight)];
+	field.dialog = self;
+	if (targetCallback != nil) field.CODialogFieldCB = targetCallback;
+	field.returnKeyType = UIReturnKeyDone;
+	field.placeholder = placeholder;
+	field.secureTextEntry = isSecure;
+	field.font = [UIFont systemFontOfSize:kCODialogTextFieldHeight - 8.0];
+	field.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+	field.textColor = [UIColor blackColor];
+	field.keyboardAppearance = UIKeyboardAppearanceAlert;
+	field.delegate = (id)self;
+	field.clearButtonMode = UITextFieldViewModeWhileEditing;
+	if (isAutoCorrect == NO) [field setAutocorrectionType:UITextAutocorrectionTypeNo];
+	[self.textFields addObject:field];
+	//[field release];
 }
+
 
 - (void)addButtonWithTitle:(NSString *)title target:(id)target selector:(SEL)sel {
   [self addButtonWithTitle:title target:target selector:sel highlighted:NO];
@@ -451,6 +496,18 @@ CODialogSynth(highlightedIndex)
   [self performSelector:selector withObject:[NSNumber numberWithBool:flag] afterDelay:self.batchDelay];
 }
 
+- (void)showOrUpdateAnimated:(BOOL)flag targetDelegateCallback:(id<CODialogDelegate>)targetCallback{
+	CODialogAssertMQ();
+	SEL selector = @selector(showOrUpdateAnimatedInternal:);
+	[NSObject cancelPreviousPerformRequestsWithTarget:self selector:selector object:nil];
+	[self performSelector:selector withObject:[NSNumber numberWithBool:flag] afterDelay:self.batchDelay];
+	if (targetCallback != nil){
+		[targetCallback cbDialogIsShowing:self];
+	}
+		
+}
+
+
 - (void)hideAnimated:(BOOL)flag {
   CODialogAssertMQ();
   
@@ -478,6 +535,37 @@ CODialogSynth(highlightedIndex)
   }];
 }
 
+- (void)hideAnimated:(BOOL)flag targetDelegateCallback:(id<CODialogDelegate>)targetCallback{
+	CODialogAssertMQ();
+	
+	CODialogWindowOverlay *overlay = self.overlay;
+	
+	// Nothing to hide if it is not key window
+	if (overlay == nil) {
+		return;
+	}
+	
+	NSTimeInterval animationDuration = (flag ? kCODialogAnimationDuration : 0.0);
+	[UIView animateWithDuration:animationDuration delay:0 options:UIViewAnimationOptionLayoutSubviews animations:^{
+		overlay.alpha = 0.0;
+		self.transform = CGAffineTransformMakeScale(kCODialogPopScale, kCODialogPopScale);
+	} completion:^(BOOL finished) {
+		overlay.hidden = YES;
+		self.transform = CGAffineTransformIdentity;
+		[self removeFromSuperview];
+		self.overlay = nil;
+		
+		// Rekey host window
+		// https://github.com/eaigner/CODialog/issues/6
+		//
+		[self.hostWindow makeKeyWindow];
+		if (targetCallback != nil){
+			[targetCallback cbDialogIsHidden:self];
+		}
+	}];
+}
+
+
 - (void)hideAnimated:(BOOL)flag afterDelay:(NSTimeInterval)delay {
   CODialogAssertMQ();
   
@@ -488,11 +576,11 @@ CODialogSynth(highlightedIndex)
 
 - (void)drawDialogBackgroundInRect:(CGRect)rect {
   // General Declarations
-  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-  CGContextRef context = UIGraphicsGetCurrentContext();
+	CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB(); // 4
+  CGContextRef context = UIGraphicsGetCurrentContext(); 
   
   // Set alpha
-  CGContextSaveGState(context);
+	CGContextSaveGState(context); // 1
   CGContextSetAlpha(context, 0.65);
   
   // Color Declarations
@@ -503,12 +591,15 @@ CODialogSynth(highlightedIndex)
                               (id)[UIColor colorWithWhite:1.0 alpha:0.75].CGColor, 
                               (id)[UIColor colorWithRed:0.227 green:0.310 blue:0.455 alpha:0.8].CGColor, nil];
   CGFloat gradientLocations[] = {0, 1};
-  CGGradientRef gradient2 = CGGradientCreateWithColors(colorSpace, (__bridge CFArrayRef)gradientColors, gradientLocations);
+  CGGradientRef gradient2 = CGGradientCreateWithColors(
+													   colorSpace, 
+													   (__bridge CFArrayRef)gradientColors, 
+													   gradientLocations); // 5
   
   // Abstracted Graphic Attributes
   CGFloat cornerRadius = 8.0;
   CGFloat strokeWidth = 2.0;
-  CGColorRef dialogShadow = [UIColor blackColor].CGColor;
+  CGColorRef dialogShadow = [UIColor blackColor].CGColor; // 6?????
   CGSize shadowOffset = CGSizeMake(0, 4);
   CGFloat shadowBlurRadius = kCODialogFrameInset - 2.0;
   
@@ -517,13 +608,13 @@ CODialogSynth(highlightedIndex)
   // Rounded Rectangle Drawing
   UIBezierPath *roundedRectanglePath = [UIBezierPath bezierPathWithRoundedRect:frame cornerRadius:cornerRadius];
   
-  CGContextSaveGState(context);
+  CGContextSaveGState(context);  //2
   CGContextSetShadowWithColor(context, shadowOffset, shadowBlurRadius, dialogShadow);
   
   [color setFill];
   [roundedRectanglePath fill];
   
-  CGContextRestoreGState(context);
+  CGContextRestoreGState(context); // 2
   
   // Set clip path
   [roundedRectanglePath addClip];
@@ -546,12 +637,12 @@ CODialogSynth(highlightedIndex)
   [bezierPath addLineToPoint:CGPointMake(mx, h1)];
   [bezierPath closePath];
   
-  CGContextSaveGState(context);
+  CGContextSaveGState(context); // 3
   
   [bezierPath addClip];
   
   CGContextDrawLinearGradient(context, gradient2, CGPointMake(w2, 0), CGPointMake(w2, h2), 0);
-  CGContextRestoreGState(context);
+  CGContextRestoreGState(context); // 3
   
   // Stroke
   [[UIColor whiteColor] setStroke];  
@@ -562,14 +653,16 @@ CODialogSynth(highlightedIndex)
   [strokePath stroke];
   
   // Cleanup
-  CGGradientRelease(gradient2);
-  CGColorSpaceRelease(colorSpace);
-  CGContextRestoreGState(context);
+	gradientColors = nil;
+	//CGColorRelease(dialogShadow); // 6?????
+  CGGradientRelease(gradient2); // 5?
+  CGColorSpaceRelease(colorSpace); // 4
+  CGContextRestoreGState(context); // 1
 }
 
 - (void)drawButtonInRect:(CGRect)rect title:(NSString *)title highlighted:(BOOL)highlighted down:(BOOL)down {
   CGContextRef ctx = UIGraphicsGetCurrentContext();
-  CGContextSaveGState(ctx);
+  CGContextSaveGState(ctx); // 7
   
   CGFloat radius = 4.0;
   CGFloat strokeWidth = 1.0;
@@ -601,7 +694,7 @@ CODialogSynth(highlightedIndex)
   [clipPath appendPath:fillPath];
   [clipPath setUsesEvenOddFillRule:YES];
   
-  CGContextSaveGState(ctx);
+  CGContextSaveGState(ctx); // 1
   
   [clipPath addClip];
   [[UIColor blackColor] setFill];
@@ -610,10 +703,10 @@ CODialogSynth(highlightedIndex)
   
   [fillPath fill];
   
-  CGContextRestoreGState(ctx);
+  CGContextRestoreGState(ctx); // 1
   
   // Top shadow
-  CGContextSaveGState(ctx);
+	CGContextSaveGState(ctx); // 2
   
   [fillPath addClip];
   [[UIColor blackColor] setFill];
@@ -622,33 +715,33 @@ CODialogSynth(highlightedIndex)
   
   [clipPath fill];
   
-  CGContextRestoreGState(ctx);
+  CGContextRestoreGState(ctx); // 2
   
   // Button gradient
-  CGContextSaveGState(ctx);
+	CGContextSaveGState(ctx); // 3
   [fillPath addClip];
   
   CGContextDrawLinearGradient(ctx,
                               gradient,
                               CGPointMake(CGRectGetMidX(buttonFrame), CGRectGetMinY(buttonFrame)),
                               CGPointMake(CGRectGetMidX(buttonFrame), CGRectGetMaxY(buttonFrame)), 0);
-  CGContextRestoreGState(ctx);
-  
+  CGContextRestoreGState(ctx); // 3
+	CGGradientRelease(gradient); // Fixed memory leak in drawButtonInRect @github pull:fbf32ba
   // Draw highlight or down state
   if (highlighted) {
-    CGContextSaveGState(ctx);
+    CGContextSaveGState(ctx); // 4
     
     [[UIColor colorWithWhite:1.0 alpha:0.25] setFill];
     [fillPath fill];
     
-    CGContextRestoreGState(ctx);
+    CGContextRestoreGState(ctx); // 4
   } else if (down) {
-    CGContextSaveGState(ctx);
+    CGContextSaveGState(ctx); // 5
     
     [[UIColor colorWithWhite:0.0 alpha:0.25] setFill];
     [fillPath fill];
     
-    CGContextRestoreGState(ctx);
+    CGContextRestoreGState(ctx); // 5
   }
   
   // Button stroke
@@ -662,23 +755,23 @@ CODialogSynth(highlightedIndex)
   CGFloat fontSize = 18.0;
   CGRect textFrame = CGRectIntegral(CGRectMake(0, (CGRectGetHeight(rect) - fontSize) / 2.0 - 1.0, CGRectGetWidth(rect), fontSize));
   
-  CGContextSaveGState(ctx);
+  CGContextSaveGState(ctx); // 6
   CGContextSetShadowWithColor(ctx, CGSizeMake(0.0, -1.0), 0.0, [UIColor blackColor].CGColor);
   
   [[UIColor whiteColor] set];
   [title drawInRect:textFrame withFont:self.titleFont lineBreakMode:UILineBreakModeMiddleTruncation alignment:UITextAlignmentCenter];
   
-  CGContextRestoreGState(ctx);
+  CGContextRestoreGState(ctx); // 6
   
   // Restore
-  CGContextRestoreGState(ctx);
+	CGContextRestoreGState(ctx); // 7
 }
 
 - (void)drawTitleInRect:(CGRect)rect isSubtitle:(BOOL)isSubtitle {
   NSString *title = (isSubtitle ? self.subtitle : self.title);
   if (title.length > 0) {
     CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGContextSaveGState(ctx);
+    CGContextSaveGState(ctx); // 1
     
     CGContextSetShadowWithColor(ctx, CGSizeMake(0.0, -1.0), 0.0, [UIColor blackColor].CGColor);
     
@@ -688,17 +781,17 @@ CODialogSynth(highlightedIndex)
     
     [title drawInRect:rect withFont:font lineBreakMode:UILineBreakModeMiddleTruncation alignment:UITextAlignmentCenter];
     
-    CGContextRestoreGState(ctx);
+    CGContextRestoreGState(ctx); // 1
   }
 }
 
 - (void)drawSymbolInRect:(CGRect)rect { 
   CGContextRef ctx = UIGraphicsGetCurrentContext();
-  CGContextSaveGState(ctx);
+  CGContextSaveGState(ctx); // 1
   
   // General Declarations
-  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-  CGContextRef context = UIGraphicsGetCurrentContext();
+	CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB(); // 2
+	CGContextRef context = UIGraphicsGetCurrentContext(); // 3
   
   // Color Declarations
   UIColor *grey = [UIColor colorWithRed:0.7 green:0.7 blue:0.7 alpha:1.0];
@@ -709,10 +802,12 @@ CODialogSynth(highlightedIndex)
                              (id)[UIColor whiteColor].CGColor, 
                              (id)grey.CGColor, nil];
   CGFloat gradientLocations[] = {0, 1};
-  CGGradientRef gradient = CGGradientCreateWithColors(colorSpace, (__bridge CFArrayRef)gradientColors, gradientLocations);
+  CGGradientRef gradient = CGGradientCreateWithColors(colorSpace, 
+													  (__bridge CFArrayRef)gradientColors, 
+													  gradientLocations); // 4
   
   // Shadow Declarations
-  CGColorRef shadow = black50.CGColor;
+	CGColorRef shadow = black50.CGColor; // 5
   CGSize shadowOffset = CGSizeMake(0, 3);
   CGFloat shadowBlurRadius = 3;
   
@@ -749,7 +844,7 @@ CODialogSynth(highlightedIndex)
   
   [bezierPath applyTransform:CGAffineTransformMakeTranslation(offset.x, offset.y)];
   
-  CGContextSaveGState(context);
+  CGContextSaveGState(context); // 6
   CGContextSetShadowWithColor(context, shadowOffset, shadowBlurRadius, shadow);
   CGContextSetFillColorWithColor(context, shadow);
   
@@ -763,38 +858,40 @@ CODialogSynth(highlightedIndex)
                               CGPointMake(CGRectGetMidX(bounds), CGRectGetMinY(bounds)),
                               CGPointMake(CGRectGetMidX(bounds), CGRectGetMaxY(bounds)),
                               0);
-  CGContextRestoreGState(context);
+  CGContextRestoreGState(context); // 6
   
   // Cleanup
-  CGGradientRelease(gradient);
-  CGColorSpaceRelease(colorSpace);
-  
-  CGContextRestoreGState(ctx);
+	CGGradientRelease(gradient); // 4
+	CGColorSpaceRelease(colorSpace); // 2
+	//CGColorRelease(shadow); // 5
+  CGContextRestoreGState(ctx); // 1
+							   // Where's 3?
 }
 
 - (void)drawTextFieldInRect:(CGRect)rect {
   // General Declarations
   CGContextRef context = UIGraphicsGetCurrentContext();
-  CGContextSaveGState(context);
+  CGContextSaveGState(context); // 1
   
   // Color Declarations
   UIColor *white10 = [UIColor colorWithWhite:1.0 alpha:0.1];
   UIColor *grey40 = [UIColor colorWithWhite:0.4 alpha:1.0];
   
   // Shadow Declarations
-  CGColorRef innerShadow = grey40.CGColor;
+	CGColorRef innerShadow = grey40.CGColor; // 2
   CGSize innerShadowOffset = CGSizeMake(0, 2);
   CGFloat innerShadowBlurRadius = 2;
-  CGColorRef outerShadow = white10.CGColor;
+  CGColorRef outerShadow = white10.CGColor; // 3
   CGSize outerShadowOffset = CGSizeMake(0, 1);
   CGFloat outerShadowBlurRadius = 0;
   
   // Rectangle Drawing
   UIBezierPath *rectanglePath = [UIBezierPath bezierPathWithRect: CGRectIntegral(rect)];
-  CGContextSaveGState(context);
+  CGContextSaveGState(context); // 4
   CGContextSetShadowWithColor(context, outerShadowOffset, outerShadowBlurRadius, outerShadow);
   [[UIColor whiteColor] setFill];
   [rectanglePath fill];
+	CGContextRestoreGState(context); // 4
   
   // Rectangle Inner Shadow
   CGRect rectangleBorderRect = CGRectInset([rectanglePath bounds], -innerShadowBlurRadius, -innerShadowBlurRadius);
@@ -805,7 +902,7 @@ CODialogSynth(highlightedIndex)
   [rectangleNegativePath appendPath: rectanglePath];
   rectangleNegativePath.usesEvenOddFillRule = YES;
   
-  CGContextSaveGState(context);
+  CGContextSaveGState(context); // 5
   {
     CGFloat xOffset = innerShadowOffset.width + round(rectangleBorderRect.size.width);
     CGFloat yOffset = innerShadowOffset.height;
@@ -821,20 +918,22 @@ CODialogSynth(highlightedIndex)
     [rectangleNegativePath fill];
   }
   
-  CGContextRestoreGState(context);
-  CGContextRestoreGState(context);
+  CGContextRestoreGState(context); // 5
+								   //CGContextRestoreGState(context); // 4
   
   [[UIColor blackColor] setStroke];
   rectanglePath.lineWidth = 1;
   [rectanglePath stroke];
   
-  CGContextRestoreGState(context);
+  CGContextRestoreGState(context); // 1
+								   //CGColorRelease(innerShadow); // 2
+								   //CGColorRelease(outerShadow); // 3
 }
 
 - (void)drawDimmedBackgroundInRect:(CGRect)rect {
   // General Declarations
-  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-  CGContextRef context = UIGraphicsGetCurrentContext();
+	CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB(); // 1
+	CGContextRef context = UIGraphicsGetCurrentContext(); 
   
   // Color Declarations
   UIColor *greyInner = [UIColor colorWithWhite:0.0 alpha:0.70];
@@ -845,24 +944,28 @@ CODialogSynth(highlightedIndex)
                              (id)greyOuter.CGColor, 
                              (id)greyInner.CGColor, nil];
   CGFloat gradientLocations[] = {0, 1};
-  CGGradientRef gradient = CGGradientCreateWithColors(colorSpace, (__bridge CFArrayRef)gradientColors, gradientLocations);
+  CGGradientRef gradient = CGGradientCreateWithColors(colorSpace, 
+													  (__bridge CFArrayRef)gradientColors, 
+													  gradientLocations); // 3
   
   // Rectangle Drawing
   CGPoint mid = CGPointMake(CGRectGetMidX(rect), CGRectGetMidY(rect));
   
   UIBezierPath* rectanglePath = [UIBezierPath bezierPathWithRect:rect];
-  CGContextSaveGState(context);
+  CGContextSaveGState(context); // 4
   [rectanglePath addClip];
   CGContextDrawRadialGradient(context,
                               gradient,
                               mid, 10,
                               mid, CGRectGetMidY(rect),
                               kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
-  CGContextRestoreGState(context);
+  CGContextRestoreGState(context); // 4
   
+	
   // Cleanup
-  CGGradientRelease(gradient);
-  CGColorSpaceRelease(colorSpace);
+  //CGContextRestoreGState(context); // 2
+	CGGradientRelease(gradient); // 3
+	CGColorSpaceRelease(colorSpace); // 1
 }
 
 - (void)drawRect:(CGRect)rect {
@@ -872,7 +975,22 @@ CODialogSynth(highlightedIndex)
 }
 
 #pragma mark - UITextFieldDelegate
-
+-(void) textFieldDidBeginEditing:(UITextField *)textField{
+	CODialogTextField *coDlgField = (CODialogTextField *)textField;
+	if (coDlgField.CODialogFieldCB != nil && 
+		[coDlgField.CODialogFieldCB respondsToSelector:@selector(cbEnterFocus:)]){
+		//NSLog(@"ABOUT TO FIRE CALL-BACK!");
+		[coDlgField.CODialogFieldCB performSelector:@selector(cbEnterFocus:) withObject:textField];
+	}
+}
+-(void) textFieldDidEndEditing:(UITextField *)textField{
+	CODialogTextField *coDlgField = (CODialogTextField *)textField;
+	if (coDlgField.CODialogFieldCB != nil && 
+		[coDlgField.CODialogFieldCB respondsToSelector:@selector(cbLeaveFocus:)]){
+		//NSLog(@"ABOUT TO FIRE CALL-BACK!");
+		[coDlgField.CODialogFieldCB performSelector:@selector(cbLeaveFocus:) withObject:textField];
+	}
+}
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
   // Cylce through text fields
   NSUInteger index = [self.textFields indexOfObject:textField];
@@ -892,6 +1010,7 @@ CODialogSynth(highlightedIndex)
 
 @implementation CODialogTextField
 CODialogSynth(dialog)
+CODialogSynth(CODialogFieldCB);
 
 - (CGRect)textRectForBounds:(CGRect)bounds {
   return CGRectInset(bounds, 4.0, 4.0);

@@ -1,5 +1,6 @@
 ### About
 
+
 CODialog is a completely configurable, almost pixel perfect replacement for UIAlertView.
 
 - Single file, just drop CODialog.h/m into your project
@@ -24,3 +25,14 @@ Follow me on Twitter: [@eaignr](https://twitter.com/#!/eaignr)
 ![success](https://github.com/eaigner/CODialog/raw/resources/Res/success.png)
 
 ![error](https://github.com/eaigner/CODialog/raw/resources/Res/error.png)
+
+### Enhancements
+
+Forked version with enhancements such as:
+  - switching off autosuggestion for text field input
+  - acting on whether the dialog is hidden or showing, 
+  - Monitoring input focus switching from one text field to another (provided text input style is used.)
+  - Can be compiled on Xcode 4.2 and earlier platform, such as Xcode 3.2.5
+    
+A few memory leaks fixed as well.
+
